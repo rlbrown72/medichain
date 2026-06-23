@@ -1,8 +1,11 @@
-import React, { useState } from 'react';
-import mockDatabase from '../../mockData.json';
+import React, { useState, useEffect } from 'react';
+// Import directly from the root bundle to bypass the ESM compilation error
+import { generateClient } from 'aws-amplify';
 import PatientSearch from './PatientSearch';
 import AISafetyBox from './AISafetyBox';
 import '../../styles/DoctorDashboard.css';
+
+const client = generateClient();
 
 // Sub-component for individual interactive historical cards
 function EncounterCard({ encounter }) {
@@ -53,12 +56,13 @@ function EncounterCard({ encounter }) {
 }
 
 export default function DoctorDashboard() {
+  const [cloudPatientsList, setCloudPatientsList] = useState([]);
   const [patient, setPatient] = useState(null);
   const [aiResult, setAiResult] = useState(null);
   const [loading, setLoading] = useState(false);
 
-  // --- THE SECURITY GATEKEEPER STATE ---
-  // Controls if access token passport has been fully granted by patient
+  // --- ACCESS CONTROL SECURITY GATE ---
+  // Controls if access permissions have been granted via verification check
   const [isRecordUnlocked, setIsRecordUnlocked] = useState(false);
 
   // States for Editable Fields
@@ -77,38 +81,47 @@ export default function DoctorDashboard() {
     prescriptions: ''
   });
 
-  const handleSearch = (id) => {
-    // Reset permissions gate whenever a fresh search query is fired
+  // FETCH LIVE DATA FROM AWS CLOUD DATABASE
+  useEffect(() => {
+    async function syncCloudDirectory() {
+      try {
+        // Query rows directly from your DynamoDB Patient table
+        const response = await client.models.Patient.list();
+        setCloudPatientsList(response.data || []);
+      } catch (error) {
+        console.error("Error syncing cloud records:", error);
+      }
+    }
+    syncCloudDirectory();
+  }, []);
+
+  const handleSearch = (searchIdOrCard) => {
     setIsRecordUnlocked(false);
     setAiResult(null); 
     
-    const data = mockDatabase[id];
+    // Search local list by id or Ghana Card match from live cloud sync
+    const data = cloudPatientsList.find(p => 
+      p.id === searchIdOrCard || 
+      p.ghanaCardId?.toUpperCase() === searchIdOrCard.toUpperCase()
+    );
+
     if (data) {
-      const latestEncounter = data.encounters && data.encounters.length > 0 ? data.encounters[0] : null;
-      
       setPatient({
-        fullName: data.fullName,
-        dob: data.dob,
+        id: data.id,
+        fullName: `${data.firstName} ${data.lastName}`,
+        dob: data.dateOfBirth,
         bloodType: data.bloodType,
         gender: data.gender,
-        ghanaCard: data.ghanaCard,
-        allergies: data.currentAllergies || [],
-        vitals: data.vitals || (latestEncounter ? { ...latestEncounter.vitalsSnapshot, spo2: latestEncounter.vitalsSnapshot.spo2 || '98%' } : { bp: "120/80 mmHg", temp: "36.7°C", weight: "75 kg", spo2: "98%" }),
+        ghanaCard: data.ghanaCardId,
+        allergies: data.allergies || ["None Registered"],
+        vitals: { bp: "120/80 mmHg", temp: "36.7°C", weight: "75 kg", spo2: "98%" },
         currentMedications: data.currentActiveMedications || [],
         encounters: data.encounters || []
       });
 
-      // Initialize vitals form
-      if (latestEncounter) {
-        setVitalsForm({
-          bp: latestEncounter.vitalsSnapshot.bp,
-          temp: latestEncounter.vitalsSnapshot.temp,
-          weight: latestEncounter.vitalsSnapshot.weight,
-          spo2: latestEncounter.vitalsSnapshot.spo2 || '98%'
-        });
-      }
+      setVitalsForm({ bp: "120/80 mmHg", temp: "36.7°C", weight: "75 kg", spo2: "98%" });
     } else {
-      alert("Patient record not found. Use mock ID: GH-ACC-2026-8902");
+      alert("Patient record not found in the cloud database. Verify registration id parameters.");
     }
   };
 
@@ -145,7 +158,7 @@ export default function DoctorDashboard() {
     setIsEditingVitals(false);
   };
 
-  // Logging current session doctor findings to list history layout
+  // Logging current session doctor findings to clinical history layout
   const submitCurrentFindings = (e) => {
     e.preventDefault();
     if (!currentFindings.diagnosis.trim() || !currentFindings.notes.trim()) {
@@ -176,7 +189,7 @@ export default function DoctorDashboard() {
     });
 
     setCurrentFindings({ diagnosis: '', notes: '', comments: '', prescriptions: '' });
-    alert("Success: Session findings archived and synced to MediChain ledger.");
+    alert("Success: Session findings archived and updated in cloud database profile.");
   };
 
   const handleAICheck = (drugName) => {
@@ -226,7 +239,6 @@ export default function DoctorDashboard() {
 
       <div className="workspace-grid">
         <aside className="workspace-sidebar">
-          {/* Enhanced Patient Search with structural callback handling */}
           <PatientSearch 
             onSearch={handleSearch} 
             onAccessApproved={setIsRecordUnlocked} 
@@ -334,7 +346,7 @@ export default function DoctorDashboard() {
           {patient && !isRecordUnlocked && (
             <div className="card sidebar-card empty-sidebar-state">
               <p style={{textAlign: 'center', color: '#64748b', fontSize: '13px', padding: '10px 0'}}>
-                🛡️ Vitals metrics sealed inside decentralized storage node.
+                🛡️ Patient records sealed inside secure database storage.
               </p>
             </div>
           )}
@@ -357,14 +369,14 @@ export default function DoctorDashboard() {
                     <span><strong>Blood Type:</strong> {patient.bloodType}</span>
                   </div>
                 </div>
-                <span className="status-tag active">Decrypted Record Connected</span>
+                <span className="status-tag active">Verified Record Connected</span>
               </div>
 
               <div className="folder-body">
                 
-                {/* SECTION 1: Dynamic Active Treatment Stack */}
+                {/* SECTION 1: Active Treatment Stack */}
                 <section className="data-segment segment-meds">
-                  <h3>Global Active Medications Stack</h3>
+                  <h3>Active Treatment & Medications List</h3>
                   <div className="meds-inner-list-edit">
                     {patient.currentMedications.map((med, idx) => (
                       <div key={idx} className="med-pill-row-manage">
@@ -399,7 +411,7 @@ export default function DoctorDashboard() {
                         />
                       </div>
                       <div className="form-element">
-                        <label>Prescriptions Administered This Visit (Please Seperate by Commas)</label>
+                        <label>Prescriptions Administered This Visit (Please Separate by Commas)</label>
                         <input 
                           type="text" 
                           placeholder="e.g., Amlodipine 5mg, Paracetamol"
@@ -430,15 +442,15 @@ export default function DoctorDashboard() {
                     </div>
 
                     <button type="submit" className="btn-archive-encounter">
-                      Commit Intake Session to Cloud History
+                      Commit Intake Session to Cloud Database History
                     </button>
                   </form>
                 </section>
 
                 {/* SECTION 3: Cross-Facility Timeline Logs */}
                 <section className="data-segment">
-                  <h3>Cross-Facility Historical Encounters Ledger</h3>
-                  <p className="helper-caption">Click a record card below to investigate diagnostic historical footprints.</p>
+                  <h3>Cross-Facility Historical Encounters Log</h3>
+                  <p className="helper-caption">Click a record card below to investigate diagnostic historical profiles.</p>
                   <div className="timeline-container">
                     {patient.encounters.map((encounter) => (
                       <EncounterCard key={encounter.id} encounter={encounter} />
@@ -452,17 +464,17 @@ export default function DoctorDashboard() {
             /* LOCKED CONTAINER / NO PATIENT PLACEHOLDER CARD */
             <div className="card placeholder-state-card">
               <div className="placeholder-icon">🔒</div>
-              <h3>{patient ? "Patient Data Encrypted" : "No Record Loaded"}</h3>
+              <h3>{patient ? "Patient Record Access Restricted" : "No Record Loaded"}</h3>
               <p>
                 {patient 
-                  ? `Found record for ${patient.fullName}. Please execute an access authorization request to view historical health footprints.`
-                  : "Execute a query using a verified patient ID  to load  health record."
+                  ? `Found profile for ${patient.fullName}. Please request authorization verification access to view historical health files.`
+                  : "Execute a search query using a verified ID or Ghana Card to load medical data."
                 }
               </p>
             </div>
           )}
 
-          {/* Render the AI check segment only if full access token is active */}
+          {/* Render the AI check segment only if access is approved */}
           {patient && isRecordUnlocked && (
             <AISafetyBox patient={patient} onRunCheck={handleAICheck} aiResult={aiResult} loading={loading} />
           )}
