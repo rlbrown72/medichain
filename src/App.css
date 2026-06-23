@@ -1,0 +1,161 @@
+/* --- Global Reset & Gateway Framework --- */
+:root {
+  --radius-lg: 12px;
+  --bg-slate: #0f172a;
+}
+
+.login-viewport {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--bg-slate);
+  padding: 20px;
+}
+
+.login-card {
+  background: #ffffff;
+  width: 100%;
+  max-width: 480px;
+  border-radius: var(--radius-lg);
+  padding: 40px 32px;
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.3);
+}
+
+.login-brand {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.logo-shield {
+  font-size: 42px;
+  display: block;
+  margin-bottom: 8px;
+}
+
+.login-brand h1 {
+  font-size: 28px;
+  margin: 0;
+  color: #1e293b;
+  font-weight: 800;
+}
+
+.login-brand p {
+  font-size: 13px;
+  color: #64748b;
+  margin: 6px 0 0 0;
+}
+
+.aws-status-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background-color: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  color: #166534;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 8px;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 32px;
+}
+
+.login-action-zone h3 {
+  font-size: 15px;
+  color: #1e293b;
+  margin: 0 0 4px 0;
+}
+
+.login-subtitle {
+  font-size: 12px;
+  color: #94a3b8;
+  margin: 0 0 20px 0;
+}
+
+.login-button-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.btn-portal-select {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  background: #ffffff;
+  text-align: left;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-portal-select:hover {
+  border-color: #3b82f6;
+  background-color: #f8fafc;
+  transform: translateY(-1px);
+}
+
+.gate-icon {
+  font-size: 24px;
+}
+
+.gate-text strong {
+  display: block;
+  font-size: 14px;
+  color: #1e293b;
+}
+
+.gate-text span {
+  font-size: 12px;
+  color: #64748b;
+}
+
+.login-footer {
+  text-align: center;
+  font-size: 11px;
+  color: #94a3b8;
+  margin-top: 32px;
+}
+
+/* Identity Context Switcher Ribbon */
+.role-switcher-ribbon {
+  background-color: #0284c7;
+  color: white;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 16px;
+  font-size: 12px;
+}
+
+.role-switcher-ribbon.client-ribbon {
+  background-color: #059669;
+}
+
+.role-switcher-ribbon button {
+  background: rgba(255, 255, 255, 0.2);
+  border: none;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.role-switcher-ribbon button:hover {
+  background: rgba(255, 255, 255, 0.35);
+}
+
+.animate-fade {
+  animation: fadeIn 0.2s ease-out forwards;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}

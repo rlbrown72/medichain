@@ -1,0 +1,65 @@
+.prescription-card h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text-main);
+  margin-bottom: 16px;
+}
+
+.form-group label {
+  font-size: 12px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.btn-scan {
+  width: 35%;
+  background-color:green;
+  color: white;
+  padding: 14px;
+  margin-top: 8px;
+}
+
+.btn-scan:hover:not(:disabled) {
+  background-color: #1e293b;
+}
+
+.btn-scan:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Elegant Soft-Colored Notification Alert Panels */
+.ai-alert-box {
+  margin-top: 20px;
+  padding: 18px;
+  border-radius: var(--radius-md);
+  border: 1px solid transparent;
+  line-height: 1.5;
+}
+
+.ai-alert-box h4 {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  margin-bottom: 6px;
+}
+
+.ai-alert-box p {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.alert-danger {
+  background-color: var(--danger-bg);
+  border-color: var(--danger-border);
+  color: var(--danger-text);
+}
+
+.alert-success {
+  background-color: var(--success-bg);
+  border-color: var(--success-border);
+  color: var(--success-text);
+}

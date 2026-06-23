@@ -1,0 +1,34 @@
+{
+  "GH-ACC-2026-8902": {
+    "patientId": "GH-ACC-2026-8902",
+    "fullName": "Kwame Mensah",
+    "dob": "1994-05-12",
+    "gender": "Male",
+    "ghanaCard": "GHA-721094832-5",
+    "bloodType": "O+",
+    "currentAllergies": ["Penicillin", "Sulfa Drugs"],
+    "currentActiveMedications": ["Metformin 500mg once daily"],
+    "encounters": [
+      {
+        "id": "visit-2",
+        "date": "2026-05-10",
+        "facility": "37 Military Hospital",
+        "doctorName": "Dr. Comfort Osei",
+        "vitalsSnapshot": { "bp": "135/85 mmHg", "temp": "38.2°C", "weight": "74 kg" },
+        "diagnosis": "Acute Malaria",
+        "notes": "Patient presented with high fever, chills, and joint pains. RDT test confirmed positive for Plasmodium falciparum.",
+        "medicationsPrescribed": ["Artesunate-Amodiaquine", "Paracetamol 500mg"]
+      },
+      {
+        "id": "visit-1",
+        "date": "2026-02-15",
+        "facility": "Ridge Hospital",
+        "doctorName": "Dr. Kojo Boateng",
+        "vitalsSnapshot": { "bp": "120/80 mmHg", "temp": "36.7°C", "weight": "75 kg" },
+        "diagnosis": "Type 2 Diabetes Routine Check",
+        "notes": "Glycemic control is stable. Patient advises regular walking exercises and strict diet compliance.",
+        "medicationsPrescribed": ["Metformin 500mg"]
+      }
+    ]
+  }
+}
