@@ -59,7 +59,6 @@ export default function PatientDashboard() {
           <div className="card privacy-shield-card">
             <div className="shield-header">
               <span className="shield-icon">🛡️</span>
-              <h3>Ledger Access Shield</h3>
             </div>
 
             {accessState === "pending" && (

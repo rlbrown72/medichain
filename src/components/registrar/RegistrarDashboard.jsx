@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
+import { generateClient } from 'aws-amplify/api'; 
 import '../../styles/RegistrarDashboard.css';
+
+const client = generateClient();
 
 export default function RegistrarDashboard() {
   const [patientData, setPatientData] = useState({
@@ -26,7 +29,7 @@ export default function RegistrarDashboard() {
     setLoading(true);
     setMessage('');
 
-    // Format phone number for AWS Cognito E.164 country code formatting (+233)
+    // Format phone number for E.164 country code standard formatting (+233)
     let formattedPhone = patientData.phoneNumber.trim();
     if (formattedPhone.startsWith('0')) {
       formattedPhone = '+233' + formattedPhone.substring(1);
@@ -36,23 +39,22 @@ export default function RegistrarDashboard() {
 
     try {
       const fullName = `${patientData.firstName.trim()} ${patientData.lastName.trim()}`;
-      const mintedId = `GH-ACC-2026-${Math.floor(1000 + Math.random() * 9000)}`;
 
-      console.log("Registering immutable file to Cognito:", formattedPhone);
-      console.log("Minting ledger index parameters:", {
-        id: mintedId,
-        name: fullName,
-        ghanaCard: patientData.ghanaCardId.toUpperCase(),
-        dob: patientData.dateOfBirth,
+      // LIVE AWS PRODUCTION CLOUD WRITE OPERATION
+      const response = await client.models.Patient.create({
+        firstName: patientData.firstName.trim(),
+        lastName: patientData.lastName.trim(),
+        ghanaCardId: patientData.ghanaCardId.toUpperCase(),
+        phoneNumber: formattedPhone,
+        dateOfBirth: patientData.dateOfBirth,
         gender: patientData.gender,
-        bloodType: patientData.bloodType
+        bloodType: patientData.bloodType,
       });
 
-      await new Promise((resolve) => setTimeout(resolve, 1500));
+      console.log("Successfully written records directly to DynamoDB via AWS AppSync:", response);
       
-      setMessage(`Success! Permanent profile initialized for ${fullName} (${patientData.bloodType}).`);
+      setMessage(`Success! Profile securely created in the cloud database for ${fullName}.`);
       
-      // Reset form fields
       setPatientData({ 
         firstName: '', 
         lastName: '', 
@@ -63,7 +65,8 @@ export default function RegistrarDashboard() {
         bloodType: 'O+' 
       });
     } catch (error) {
-      setMessage('Registration failed: ' + error.message);
+      console.error("Cloud Database Write Failure:", error);
+      setMessage('Cloud synchronization failed: ' + error.message);
     } finally {
       setLoading(false);
     }
@@ -73,7 +76,7 @@ export default function RegistrarDashboard() {
     <div className="registrar-container">
       <div className="registrar-sidebar">
         <h2>MediChain</h2>
-        <p className="sidebar-role">Registrar Node</p>
+        <p className="sidebar-role">Registration Desk</p>
         <div className="sidebar-menu">
           <button className="menu-item active">➕ Register Patient</button>
           <button className="menu-item">📋 Recent Records</button>
@@ -83,7 +86,7 @@ export default function RegistrarDashboard() {
       <div className="registrar-main">
         <header className="registrar-header">
           <h1>Onboard New Patient</h1>
-          <p>Establish secure on-chain health records and identity directories</p>
+          <p>Create secure electronic medical records and identity profiles</p>
         </header>
 
         <section className="form-section">
@@ -127,7 +130,7 @@ export default function RegistrarDashboard() {
             </div>
 
             <div className="form-group">
-              <label>Mobile Number (For Access OTP Tokens)</label>
+              <label>Mobile Number (For Access OTP Verification)</label>
               <input 
                 type="tel" 
                 name="phoneNumber" 
@@ -163,7 +166,7 @@ export default function RegistrarDashboard() {
               </div>
             </div>
 
-            {/* IMMUTABLE DATA BLOCK */}
+            {/* UNALTERABLE BIOLOGICAL DATA BLOCK */}
             <div className="form-group" style={{ background: '#f0fdf4', padding: '12px', borderRadius: '6px', border: '1px dashed #bbf7d0' }}>
               <label style={{ color: '#166534' }}>Blood Type Group (Permanent Attribute)</label>
               <select 
@@ -184,7 +187,7 @@ export default function RegistrarDashboard() {
             </div>
 
             <button type="submit" className="submit-btn" disabled={loading}>
-              {loading ? 'Provisioning Cloud Vault...' : 'Initialize Secure Vault'}
+              {loading ? 'Saving to Cloud Database...' : 'Create Secure Patient Profile'}
             </button>
           </form>
 

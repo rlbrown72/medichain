@@ -452,11 +452,11 @@ export default function DoctorDashboard() {
             /* LOCKED CONTAINER / NO PATIENT PLACEHOLDER CARD */
             <div className="card placeholder-state-card">
               <div className="placeholder-icon">🔒</div>
-              <h3>{patient ? "Patient Ledger Encrypted" : "No Record Loaded"}</h3>
+              <h3>{patient ? "Patient Data Encrypted" : "No Record Loaded"}</h3>
               <p>
                 {patient 
-                  ? `Found record for ${patient.fullName}. Please execute a cryptographic access authorization request to view historical health footprints.`
-                  : "Execute an authentication query using a verified patient index marker to load synchronized health vaults."
+                  ? `Found record for ${patient.fullName}. Please execute an access authorization request to view historical health footprints.`
+                  : "Execute a query using a verified patient ID  to load  health record."
                 }
               </p>
             </div>

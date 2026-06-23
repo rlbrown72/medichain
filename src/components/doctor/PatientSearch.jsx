@@ -30,7 +30,7 @@ export default function PatientSearch({ onSearch, onAccessApproved }) {
 
   return (
     <div className="card patient-search-card">
-      <h3>On-Chain Patient Query Ledger</h3>
+      <h3>Patient Query </h3>
       <form onSubmit={handleSearch} className="search-form-row">
         <input 
           type="text" 
