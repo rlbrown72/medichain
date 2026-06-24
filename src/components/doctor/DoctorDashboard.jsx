@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
-// Import directly from the root bundle to bypass the ESM compilation error
-import { generateClient } from 'aws-amplify';
+import { generateClient } from 'aws-amplify/api';
 import PatientSearch from './PatientSearch';
 import AISafetyBox from './AISafetyBox';
 import '../../styles/DoctorDashboard.css';
