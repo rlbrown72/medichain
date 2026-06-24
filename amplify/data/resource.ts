@@ -1,4 +1,3 @@
-// amplify/data/resource.ts
 import { defineData } from '@aws-amplify/backend';
 import { schema } from './schema';
 
