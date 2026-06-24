@@ -1,7 +1,7 @@
 // amplify/data/schema.ts
-import { type ClientSchema, a, defineData } from '@aws-amplify/backend';
+import { type ClientSchema, a } from '@aws-amplify/backend';
 
-const schema = a.schema({
+export const schema = a.schema({
   Patient: a
     .model({
       id: a.id().required(),
@@ -13,15 +13,8 @@ const schema = a.schema({
       gender: a.string().required(),
       bloodType: a.string().required(),
     })
-    // Explicitly typed parameter to satisfy strict TS rules
-    .authorization((allow: any) => [allow.authenticated()]),
+    // Changes rule from authenticated user pools to public API key access
+    .authorization((allow: any) => [allow.publicApiKey()]),
 });
 
 export type Schema = ClientSchema<typeof schema>;
-
-export const data = defineData({
-  schema,
-  authorizationModes: {
-    defaultAuthorizationMode: 'userPool',
-  },
-});
