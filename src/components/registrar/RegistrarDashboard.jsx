@@ -1,8 +1,5 @@
 import React, { useState } from 'react';
-import { generateClient } from 'aws-amplify/api'; 
 import '../../styles/RegistrarDashboard.css';
-
-const client = generateClient();
 
 export default function RegistrarDashboard() {
   const [patientData, setPatientData] = useState({
@@ -40,18 +37,36 @@ export default function RegistrarDashboard() {
     try {
       const fullName = `${patientData.firstName.trim()} ${patientData.lastName.trim()}`;
 
-      // LIVE AWS PRODUCTION CLOUD WRITE OPERATION
-      const response = await client.models.Patient.create({
+      // 🌐 ROUTING THROUGH SECURE API GATEWAY INFRASTRUCTURE
+      const API_ENDPOINT = "https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/patients";
+      
+      const payload = {
         firstName: patientData.firstName.trim(),
         lastName: patientData.lastName.trim(),
-        ghanaCardId: patientData.ghanaCardId.toUpperCase(),
+        ghanaCardId: patientData.ghanaCardId.toUpperCase().trim(),
         phoneNumber: formattedPhone,
         dateOfBirth: patientData.dateOfBirth,
         gender: patientData.gender,
-        bloodType: patientData.bloodType,
+        bloodType: patientData.bloodType
+      };
+
+      const response = await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify(payload)
       });
 
-      console.log("Successfully written records directly to DynamoDB via AWS AppSync:", response);
+      const responseData = await response.json();
+
+      if (!response.ok) {
+        throw new Error(responseData.message || "Failed to finalize database write via API context.");
+      }
+
+      // Extract generated patient ID context if returned by your Lambda
+      const assignedId = responseData.id || "Secure ID Allocation";
+      console.log("Successfully written record via API Gateway Proxy. Assigned ID:", assignedId);
       
       setMessage(`Success! Profile securely created in the cloud database for ${fullName}.`);
       
@@ -166,7 +181,6 @@ export default function RegistrarDashboard() {
               </div>
             </div>
 
-            {/* UNALTERABLE BIOLOGICAL DATA BLOCK */}
             <div className="form-group" style={{ background: '#f0fdf4', padding: '12px', borderRadius: '6px', border: '1px dashed #bbf7d0' }}>
               <label style={{ color: '#166534' }}>Blood Type Group (Permanent Attribute)</label>
               <select 

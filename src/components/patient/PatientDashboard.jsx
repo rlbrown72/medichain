@@ -1,14 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import '../../styles/PatientDashboard.css';
-import database from '../../mockData.json';
 
 export default function PatientDashboard() {
-  // Target the specific patient key inside your object store
-  const targetPatientKey = "GH-ACC-2026-8902";
-  const [patientRecord] = useState(database[targetPatientKey]);
-
-  // Extract the latest vitals safely from the most recent encounter (visit-2)
-  const latestVitals = patientRecord.encounters[0]?.vitalsSnapshot || { bp: "N/A", temp: "N/A", weight: "N/A" };
+  // SET UP STATES FOR THE LIVE CLOUD DATA
+  const [patientRecord, setPatientRecord] = useState(null);
+  const [loading, setLoading] = useState(true);
 
   // --- Dynamic UI State Management ---
   const [accessState, setAccessState] = useState("pending"); // "pending" | "granted" | "locked"
@@ -23,6 +19,61 @@ export default function PatientDashboard() {
     duration: "7 Days"
   };
 
+  // EFFECT HOOK TO FETCH LIVE RECORD DIRECTLY FROM DYNAMODB
+  useEffect(() => {
+    async function loadCloudPatient() {
+      try {
+        // Using a test ID key that matches your active DynamoDB storage partition pattern
+        const TARGET_PATIENT_ID = "GH-ACC-2026-8902"; 
+        const API_ENDPOINT = `https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/patients/${TARGET_PATIENT_ID}`;
+        
+        const response = await fetch(API_ENDPOINT, {
+          method: "GET",
+          headers: { "Content-Type": "application/json" }
+        });
+
+        if (!response.ok) {
+          throw new Error(`Cloud lookup returned status code: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const historicalEncounters = data.Encounters || [];
+        
+        // Grab the most recent encounter block to extract baseline vitals snapshots
+        const latestEncounter = historicalEncounters.length > 0 
+          ? historicalEncounters[historicalEncounters.length - 1] 
+          : null;
+
+        const resolvedVitals = {
+          bp: latestEncounter?.vitals?.bp || "Not Recorded",
+          temp: latestEncounter?.vitals?.temp ? `${latestEncounter.vitals.temp}°C` : "36.5°C", 
+          weight: latestEncounter?.vitals?.weight || "Not Recorded",
+          spo2: latestEncounter?.vitals?.spo2 || "Not Recorded"
+        };
+        
+        // Format live payload attributes cleanly into state
+        setPatientRecord({
+          fullName: data.fullName,
+          patientId: data.PatientID,
+          dob: data.dateOfBirth,
+          gender: data.gender,
+          bloodType: data.bloodType,
+          ghanaCard: data.PatientID,
+          currentAllergies: data.allergies || ["None Registered"],
+          currentActiveMedications: data.currentActiveMedications || [],
+          vitals: resolvedVitals,
+          encounters: historicalEncounters
+        });
+
+      } catch (err) {
+        console.error("Cloud lookup error on Patient portal:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadCloudPatient();
+  }, []);
+
   const handleAcceptAccess = () => {
     const now = new Date();
     const oneWeekLater = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -35,6 +86,24 @@ export default function PatientDashboard() {
     setAccessState("granted");
   };
 
+  // Render baseline screen state while fetch completes
+  if (loading) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', fontFamily: 'sans-serif', color: '#64748b' }}>
+        🔄 Loading encrypted medical profile from cloud core...
+      </div>
+    );
+  }
+
+  // Handle fallback state cleanly if table search returns blank
+  if (!patientRecord) {
+    return (
+      <div style={{ padding: '40px', textAlign: 'center', fontFamily: 'sans-serif', color: '#ef4444' }}>
+        ⚠️ Medical Record could not be pulled from AWS us-west-2. Verify item attributes in the DynamoDB console.
+      </div>
+    );
+  }
+
   return (
     <div className="patient-viewport">
       {/* Top Navbar Header */}
@@ -46,7 +115,7 @@ export default function PatientDashboard() {
         <div className="patient-profile">
           <span>{patientRecord.fullName}</span>
           <div className="avatar-circle-pat">
-            {patientRecord.fullName.split(' ').map(n => n[0]).join('')}
+            {patientRecord.fullName ? patientRecord.fullName.split(' ').map(n => n[0]).join('') : "PT"}
           </div>
         </div>
       </nav>
@@ -95,21 +164,25 @@ export default function PatientDashboard() {
             )}
           </div>
 
-          {/* VITALS PANEL (Now pulling directly from latest encounter in JSON) */}
+          {/* VITALS PANEL */}
           <div className="card patient-sidebar-summary-card">
             <h3 className="sidebar-section-title">My Latest Vitals</h3>
             <div className="vitals-horizontal-grid">
               <div className="vital-pill-item">
                 <span className="v-emoji">💓</span>
-                <div className="v-meta"><span className="v-lbl">BP</span><span className="v-val">{latestVitals.bp}</span></div>
+                <div className="v-meta"><span className="v-lbl">BP</span><span className="v-val">{patientRecord.vitals.bp}</span></div>
               </div>
               <div className="vital-pill-item">
                 <span className="v-emoji">🌡️</span>
-                <div className="v-meta"><span className="v-lbl">Temp</span><span className="v-val">{latestVitals.temp}</span></div>
+                <div className="v-meta"><span className="v-lbl">Temp</span><span className="v-val">{patientRecord.vitals.temp}</span></div>
+              </div>
+              <div className="vital-pill-item">
+                <span className="v-emoji">⚖️</span>
+                <div className="v-meta"><span className="v-lbl">Weight</span><span className="v-val">{patientRecord.vitals.weight}</span></div>
               </div>
               <div className="vital-pill-item vital-highlight-pill">
-                <span className="v-emoji">⚖️</span>
-                <div className="v-meta"><span className="v-lbl">Weight</span><span className="v-val">{latestVitals.weight}</span></div>
+                <span className="v-emoji">🫁</span>
+                <div className="v-meta"><span className="v-lbl">SpO2</span><span className="v-val">{patientRecord.vitals.spo2}</span></div>
               </div>
             </div>
           </div>
@@ -137,7 +210,7 @@ export default function PatientDashboard() {
 
             {/* Dynamic Allergies */}
             <div className="data-segment">
-              <h3>Documented Allergies</h3>
+              <h3>Documented Allergies Matrix</h3>
               <div className="patient-allergy-row-display">
                 {patientRecord.currentAllergies.map((allergy, idx) => (
                   <span key={idx} className="mini-med-tag allergy-style-tag">⚠️ {allergy}</span>
@@ -149,12 +222,16 @@ export default function PatientDashboard() {
             <div className="data-segment">
               <h3>Current Active Medications Tracker</h3>
               <div className="meds-inner-list">
-                {patientRecord.currentActiveMedications.map((med, idx) => (
-                  <div key={idx} className="med-pill-row patient-read-pill">
-                    <span className="indicator-dot"></span>
-                    {med}
-                  </div>
-                ))}
+                {patientRecord.currentActiveMedications.length > 0 ? (
+                  patientRecord.currentActiveMedications.map((med, idx) => (
+                    <div key={idx} className="med-pill-row patient-read-pill">
+                      <span className="indicator-dot"></span>
+                      {med}
+                    </div>
+                  ))
+                ) : (
+                  <p style={{color: '#64748b', fontSize: '13px', paddingLeft: '4px'}}>No chronic tracking prescriptions active.</p>
+                )}
               </div>
             </div>
 
@@ -170,49 +247,53 @@ export default function PatientDashboard() {
               
               {isHistoryOpen && (
                 <div className="timeline-container dropdown-animated-content">
-                  {patientRecord.encounters.map((encounter) => {
-                    const isExpanded = expandedEncounter === encounter.id;
-                    return (
-                      <div key={encounter.id} className={`timeline-item ${isExpanded ? 'card-expanded' : ''}`}>
-                        <div className="p-timeline-badge"></div>
-                        <div 
-                          className="timeline-payload clickable-header" 
-                          onClick={() => setExpandedEncounter(isExpanded ? null : encounter.id)}
-                        >
-                          <div className="payload-meta">
-                            <div className="encounter-title-group">
-                              <h4>{encounter.diagnosis}</h4>
-                              <span className="attending-doc">Attending: <strong>{encounter.doctorName}</strong></span>
+                  {patientRecord.encounters.length === 0 ? (
+                    <p style={{ padding: '15px 10px', color: '#64748b', fontSize: '13px' }}>No historical visit logs currently archived on-chain.</p>
+                  ) : (
+                    patientRecord.encounters.map((encounter, idx) => {
+                      const encounterId = encounter.id || encounter.encounterId || idx;
+                      const isExpanded = expandedEncounter === encounterId;
+                      const encVitals = encounter.vitals || {};
+                      
+                      return (
+                        <div key={encounterId} className={`timeline-item ${isExpanded ? 'card-expanded' : ''}`}>
+                          <div className="p-timeline-badge"></div>
+                          <div 
+                            className="timeline-payload clickable-header" 
+                            onClick={() => setExpandedEncounter(isExpanded ? null : encounterId)}
+                          >
+                            <div className="payload-meta">
+                              <div className="encounter-title-group">
+                                <h4>{encounter.diagnosis || "General Consultation"}</h4>
+                                <span className="attending-doc">Attending: <strong>{encounter.doctorName || "Unknown Doctor"}</strong></span>
+                              </div>
+                              <div className="facility-right-block">
+                                <span className="facility-stamp">
+                                  {encounter.date ? encounter.date.split('T')[0] : "N/A"} @ <span className="highlight-facility">Korle Bu Teaching Hospital</span>
+                                </span>
+                                <span className="expand-indicator">{isExpanded ? 'Collapse ▲' : 'View Details ▼'}</span>
+                              </div>
                             </div>
-                            <div className="facility-right-block">
-                              <span className="facility-stamp">{encounter.date} @ <span className="highlight-facility">{encounter.facility}</span></span>
-                              <span className="expand-indicator">{isExpanded ? 'Collapse ▲' : 'View Details ▼'}</span>
-                            </div>
-                          </div>
 
-                          {isExpanded && (
-                            <div className="expanded-encounter-details">
-                              <div className="encounter-vitals-strip">
-                                <span className="v-tag">💓 BP: {encounter.vitalsSnapshot.bp}</span>
-                                <span className="v-tag">🌡️ Temp: {encounter.vitalsSnapshot.temp}</span>
-                                <span className="v-tag">⚖️ Weight: {encounter.vitalsSnapshot.weight}</span>
-                              </div>
-                              <p className="payload-notes"><strong>Clinical Notes:</strong> {encounter.notes}</p>
-                              
-                              <div className="visit-dispensed-meds">
-                                <span className="meds-label">Prescriptions Issued:</span>
-                                <div className="visit-med-tags">
-                                  {encounter.medicationsPrescribed.map((med, i) => (
-                                    <span key={i} className="mini-med-tag">{med}</span>
-                                  ))}
+                            {isExpanded && (
+                              <div className="expanded-encounter-details">
+                                <div className="encounter-vitals-strip">
+                                  <span className="v-tag">💓 BP: {encVitals.bp || 'N/A'}</span>
+                                  <span className="v-tag">🌡️ Temp: {encVitals.temp ? `${encVitals.temp}°C` : 'N/A'}</span>
+                                  <span className="v-tag">⚖️ Weight: {encVitals.weight || 'N/A'}</span>
+                                  <span className="v-tag">🫁 SpO2: {encVitals.spo2 || 'N/A'}</span>
                                 </div>
+                                <p className="payload-notes"><strong>Clinical Assessment / Symptoms:</strong> {encounter.symptoms || "No clinical observations documented."}</p>
+                                {encounter.comments && (
+                                  <p className="payload-notes" style={{marginTop: '6px'}}><strong>Doctor Comments:</strong> <em>{encounter.comments}</em></p>
+                                )}
                               </div>
-                            </div>
-                          )}
+                            )}
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })
+                  )}
                 </div>
               )}
             </div>

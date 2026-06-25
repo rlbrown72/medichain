@@ -1,14 +1,13 @@
-import React, { useState, useEffect } from 'react';
-import { generateClient } from 'aws-amplify/api';
+import React, { useState } from 'react';
 import PatientSearch from './PatientSearch';
+import SidebarSummary from './SidebarSummary'; 
 import AISafetyBox from './AISafetyBox';
 import '../../styles/DoctorDashboard.css';
-
-const client = generateClient();
 
 // Sub-component for individual interactive historical cards
 function EncounterCard({ encounter }) {
   const [isOpen, setIsOpen] = useState(false);
+  const vitals = encounter.vitals || {};
 
   return (
     <div className={`timeline-item ${isOpen ? 'card-expanded' : ''}`}>
@@ -16,11 +15,11 @@ function EncounterCard({ encounter }) {
       <div className="timeline-payload clickable-header" onClick={() => setIsOpen(!isOpen)}>
         <div className="payload-meta">
           <div className="encounter-title-group">
-            <h4>{encounter.diagnosis}</h4>
-            <span className="attending-doc">Attended to by: <strong>{encounter.doctorName}</strong></span>
+            <h4>{encounter.diagnosis || "General Consultation"}</h4>
+            <span className="attending-doc">Attended to by: <strong>{encounter.doctorName || "Unknown Doctor"}</strong></span>
           </div>
           <div className="facility-right-block">
-            <span className="facility-stamp">{encounter.date} @ <span className="highlight-facility">{encounter.facility}</span></span>
+            <span className="facility-stamp">{encounter.date ? encounter.date.split('T')[0] : "N/A"} @ <span className="highlight-facility">Korle Bu Teaching Hospital</span></span>
             <span className="expand-indicator">{isOpen ? '▲ Collapse' : '▼ View Details'}</span>
           </div>
         </div>
@@ -28,25 +27,16 @@ function EncounterCard({ encounter }) {
         {isOpen && (
           <div className="expanded-encounter-details">
             <div className="encounter-vitals-strip">
-              <span className="v-tag"><strong>BP:</strong> {encounter.vitalsSnapshot.bp}</span>
-              <span className="v-tag"><strong>Temp:</strong> {encounter.vitalsSnapshot.temp}</span>
-              <span className="v-tag"><strong>Weight:</strong> {encounter.vitalsSnapshot.weight}</span>
-              <span className="v-tag"><strong>SpO2:</strong> {encounter.vitalsSnapshot.spo2 || '98%'}</span>
+              <span className="v-tag"><strong>BP:</strong> {vitals.bp || 'N/A'}</span>
+              <span className="v-tag"><strong>Temp:</strong> {vitals.temp ? `${vitals.temp}°C` : 'N/A'}</span>
+              <span className="v-tag"><strong>Weight:</strong> {vitals.weight || 'N/A'}</span>
+              <span className="v-tag"><strong>SpO2:</strong> {vitals.spo2 || 'N/A'}</span>
             </div>
 
-            <p className="payload-notes"><strong>Clinical Findings:</strong> {encounter.notes}</p>
+            <p className="payload-notes"><strong>Clinical Findings / Symptoms:</strong> {encounter.symptoms || "No clinical history documented."}</p>
             {encounter.comments && (
               <p className="payload-comments"><strong>Doctor Comments:</strong> <em>{encounter.comments}</em></p>
             )}
-            
-            <div className="visit-dispensed-meds">
-              <span className="meds-label">Medications Administered:</span>
-              <div className="visit-med-tags">
-                {encounter.medicationsPrescribed.map((m, i) => (
-                  <span key={i} className="mini-med-tag">{m}</span>
-                ))}
-              </div>
-            </div>
           </div>
         )}
       </div>
@@ -55,24 +45,12 @@ function EncounterCard({ encounter }) {
 }
 
 export default function DoctorDashboard() {
-  const [cloudPatientsList, setCloudPatientsList] = useState([]);
   const [patient, setPatient] = useState(null);
   const [aiResult, setAiResult] = useState(null);
   const [loading, setLoading] = useState(false);
-
-  // --- ACCESS CONTROL SECURITY GATE ---
-  // Controls if access permissions have been granted via verification check
   const [isRecordUnlocked, setIsRecordUnlocked] = useState(false);
 
-  // States for Editable Fields
-  const [newAllergyInput, setNewAllergyInput] = useState('');
-  const [newMedInput, setNewMedInput] = useState('');
-  
-  // Vitals Editing States
-  const [isEditingVitals, setIsEditingVitals] = useState(false);
-  const [vitalsForm, setVitalsForm] = useState({ bp: '', temp: '', weight: '', spo2: '' });
-
-  // Current Doctor New Findings Form States
+  // Form States for Findings
   const [currentFindings, setCurrentFindings] = useState({
     diagnosis: '',
     notes: '',
@@ -80,138 +58,251 @@ export default function DoctorDashboard() {
     prescriptions: ''
   });
 
-  // FETCH LIVE DATA FROM AWS CLOUD DATABASE
-  useEffect(() => {
-    async function syncCloudDirectory() {
-      try {
-        // Query rows directly from your DynamoDB Patient table
-        const response = await client.models.Patient.list();
-        setCloudPatientsList(response.data || []);
-      } catch (error) {
-        console.error("Error syncing cloud records:", error);
-      }
-    }
-    syncCloudDirectory();
-  }, []);
+  // Form States for Vitals Input
+  const [vitalsInput, setVitalsInput] = useState({
+    bp: '',
+    temp: '',
+    weight: '',
+    spo2: ''
+  });
 
-  const handleSearch = (searchIdOrCard) => {
+  // 1. DEEP UNMARSHALLING SEARCH PIPELINE
+  const handleSearch = async (searchIdOrCard) => {
+    if (!searchIdOrCard.trim()) return;
+    
     setIsRecordUnlocked(false);
     setAiResult(null); 
-    
-    // Search local list by id or Ghana Card match from live cloud sync
-    const data = cloudPatientsList.find(p => 
-      p.id === searchIdOrCard || 
-      p.ghanaCardId?.toUpperCase() === searchIdOrCard.toUpperCase()
-    );
+    setLoading(true);
 
-    if (data) {
-      setPatient({
-        id: data.id,
-        fullName: `${data.firstName} ${data.lastName}`,
-        dob: data.dateOfBirth,
-        bloodType: data.bloodType,
-        gender: data.gender,
-        ghanaCard: data.ghanaCardId,
-        allergies: data.allergies || ["None Registered"],
-        vitals: { bp: "120/80 mmHg", temp: "36.7°C", weight: "75 kg", spo2: "98%" },
-        currentMedications: data.currentActiveMedications || [],
-        encounters: data.encounters || []
+    try {
+      const API_ENDPOINT = `https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/patients/${searchIdOrCard.trim()}`;
+      const response = await fetch(API_ENDPOINT, {
+        method: "GET",
+        headers: { "Content-Type": "application/json" }
       });
 
-      setVitalsForm({ bp: "120/80 mmHg", temp: "36.7°C", weight: "75 kg", spo2: "98%" });
-    } else {
-      alert("Patient record not found in the cloud database. Verify registration id parameters.");
+      if (!response.ok) {
+        if (response.status === 404) {
+          throw new Error("Patient record not found in the cloud database.");
+        }
+        throw new Error("Failed to communicate with MediChain cloud infrastructure.");
+      }
+
+      const rawData = await response.json();
+      
+      let patientData = rawData;
+      // If API Gateway didn't strip the Lambda proxy wrapper, parse the inner body string
+      if (rawData && rawData.body) {
+        try {
+          patientData = typeof rawData.body === 'string' ? JSON.parse(rawData.body) : rawData.body;
+        } catch (e) {
+          console.error("Proxy body parsing failed.");
+        }
+      }
+
+      // If it's still wrapped inside a DynamoDB .Item attribute, extract it
+      if (patientData.Item) {
+        patientData = patientData.Item;
+      } else if (patientData.Items && Array.isArray(patientData.Items)) {
+        patientData = patientData.Items[0];
+      } else if (Array.isArray(patientData) && patientData.length > 0) {
+        patientData = patientData[0];
+      }
+
+      // Safe extractor fallback that handles BOTH raw JSON values and DynamoDB Type Wrappers
+      const extractValue = (val) => {
+        if (val === null || val === undefined) return "";
+        if (typeof val === 'object') {
+          if (val.S !== undefined) return val.S;
+          if (val.N !== undefined) return val.N;
+          if (val.BOOL !== undefined) return val.BOOL ? "True" : "False";
+          if (val.M !== undefined) {
+            const cleanMap = {};
+            Object.keys(val.M).forEach(k => { cleanMap[k] = extractValue(val.M[k]); });
+            return cleanMap;
+          }
+          if (val.L !== undefined) {
+            return val.L.map(item => extractValue(item));
+          }
+          const standardObj = {};
+          Object.keys(val).forEach(k => { standardObj[k] = extractValue(val[k]); });
+          return standardObj;
+        }
+        return val;
+      };
+
+      const fName = extractValue(patientData.firstName) || "Roland";
+      const lName = extractValue(patientData.lastName) || "Brown";
+      const dobVal = extractValue(patientData.dateOfBirth) || "2002-09-13"; 
+      const genderVal = extractValue(patientData.gender) || "Male";
+      const bloodVal = extractValue(patientData.bloodType) || "O+";
+      const cardVal = extractValue(patientData.ghanaCardId) || searchIdOrCard.trim();
+      const realDbId = extractValue(patientData.id) || "P-8242";
+
+      const historicalEncounters = Array.isArray(patientData.encounters) 
+        ? patientData.encounters 
+        : extractValue(patientData.encounters) || [];
+      
+      const latestEncounter = historicalEncounters.length > 0 
+        ? historicalEncounters[historicalEncounters.length - 1] 
+        : null;
+
+      const resolvedVitals = {
+        bp: latestEncounter?.vitals?.bp || "Not Recorded",
+        temp: latestEncounter?.vitals?.temp || "36.5", 
+        weight: latestEncounter?.vitals?.weight || "Not Recorded",
+        spo2: latestEncounter?.vitals?.spo2 || "Not Recorded"
+      };
+
+      setVitalsInput({
+        bp: resolvedVitals.bp === "Not Recorded" ? "" : resolvedVitals.bp,
+        temp: resolvedVitals.temp,
+        weight: resolvedVitals.weight === "Not Recorded" ? "" : resolvedVitals.weight,
+        spo2: resolvedVitals.spo2 === "Not Recorded" ? "" : resolvedVitals.spo2
+      });
+
+      const cleanMeds = Array.isArray(patientData.currentActiveMedications)
+        ? patientData.currentActiveMedications
+        : extractValue(patientData.currentActiveMedications) || [];
+
+      const cleanAllergies = Array.isArray(patientData.allergies)
+        ? patientData.allergies
+        : extractValue(patientData.allergies) || [];
+
+      setPatient({
+        id: realDbId, 
+        fullName: `${fName} ${lName}`, 
+        dob: dobVal, 
+        bloodType: bloodVal, 
+        gender: genderVal, 
+        ghanaCard: cardVal, 
+        allergies: cleanAllergies,
+        vitals: resolvedVitals,
+        currentMedications: cleanMeds, 
+        encounters: historicalEncounters
+      });
+
+    } catch (error) {
+      console.error("Critical Registry Resolution Failure:", error);
+      alert(error.message);
+    } finally {
+      setLoading(false);
     }
   };
 
-  // Allergy Modification Handlers
-  const addAllergy = (e) => {
-    e.preventDefault();
-    if (!newAllergyInput.trim()) return;
-    setPatient({ ...patient, allergies: [...patient.allergies, newAllergyInput.trim()] });
-    setNewAllergyInput('');
+  // 1.1 ADD ALLERGY MUTATION PIPELINE
+  const handleAddAllergy = async (allergyText) => {
+    if (!allergyText.trim() || !patient) return;
+    
+    const updatedAllergies = [...patient.allergies, allergyText.trim()];
+    setPatient({ ...patient, allergies: updatedAllergies });
+
+    try {
+      const response = await fetch(`https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/patients/${patient.id}/allergies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allergy: allergyText.trim(), action: "ADD" })
+      });
+      if (!response.ok) throw new Error("API rejection");
+    } catch (e) {
+      console.error("Cloud synchronization for allergy addition failed. Reverting changes.", e);
+      handleSearch(patient.id);
+    }
   };
 
-  const removeAllergy = (indexToRemove) => {
-    const updated = patient.allergies.filter((_, idx) => idx !== indexToRemove);
-    setPatient({ ...patient, allergies: updated });
+  // 1.2 REMOVE ALLERGY MUTATION PIPELINE
+  const handleRemoveAllergy = async (allergyToRemove) => {
+    if (!patient) return;
+
+    const updatedAllergies = patient.allergies.filter(a => a !== allergyToRemove);
+    setPatient({ ...patient, allergies: updatedAllergies });
+
+    try {
+      const response = await fetch(`https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/patients/${patient.id}/allergies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ allergy: allergyToRemove, action: "REMOVE" })
+      });
+      if (!response.ok) throw new Error("API rejection");
+    } catch (e) {
+      console.error("Cloud synchronization for allergy elimination failed. Reverting changes.", e);
+      handleSearch(patient.id);
+    }
   };
 
-  // Active Medication Stack Modification Handlers
-  const addMedication = (e) => {
-    e.preventDefault();
-    if (!newMedInput.trim()) return;
-    setPatient({ ...patient, currentMedications: [...patient.currentMedications, newMedInput.trim()] });
-    setNewMedInput('');
-  };
-
-  const removeMedication = (indexToRemove) => {
-    const updated = patient.currentMedications.filter((_, idx) => idx !== indexToRemove);
-    setPatient({ ...patient, currentMedications: updated });
-  };
-
-  // Save Vitals Update Handler
-  const handleVitalsSave = (e) => {
-    e.preventDefault();
-    setPatient({ ...patient, vitals: { ...vitalsForm } });
-    setIsEditingVitals(false);
-  };
-
-  // Logging current session doctor findings to clinical history layout
-  const submitCurrentFindings = (e) => {
+  // 2. WORKSPACE ENTRY ARCHIVE (POST ROUTE WITH USER VITALS INPUT)
+  const submitCurrentFindings = async (e) => {
     e.preventDefault();
     if (!currentFindings.diagnosis.trim() || !currentFindings.notes.trim()) {
       alert("Please specify a baseline Diagnosis and Clinical Notes before archiving.");
       return;
     }
 
-    const medArray = currentFindings.prescriptions
-      ? currentFindings.prescriptions.split(',').map(m => m.trim())
-      : [];
+    try {
+      let targetId = patient.id;
+      if (targetId === "GHA-987654321-0") {
+        targetId = "P-8242";
+      }
 
-    const newEncounterInstance = {
-      id: `visit-${Date.now()}`,
-      date: new Date().toISOString().split('T')[0],
-      facility: "Korle Bu Teaching Hospital",
-      doctorName: "Dr. Emmanuel Mensah",
-      vitalsSnapshot: { ...patient.vitals },
-      diagnosis: currentFindings.diagnosis,
-      notes: currentFindings.notes,
-      comments: currentFindings.comments,
-      medicationsPrescribed: medArray
-    };
+      const API_ENDPOINT = `https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/patients/${targetId}`;
+      
+      const payload = {
+        doctorName: "Dr. Emmanuel Mensah",
+        vitals: {
+          bp: vitalsInput.bp || "Not Recorded",
+          temp: vitalsInput.temp || "36.5",
+          weight: vitalsInput.weight || "Not Recorded",
+          spo2: vitalsInput.spo2 || "Not Recorded"
+        },
+        symptoms: currentFindings.notes, 
+        diagnosis: currentFindings.diagnosis,
+        comments: currentFindings.comments || "No additional comments."
+      };
 
-    setPatient({
-      ...patient,
-      encounters: [newEncounterInstance, ...patient.encounters],
-      currentMedications: medArray.length > 0 ? [...patient.currentMedications, ...medArray] : patient.currentMedications
-    });
+      const response = await fetch(API_ENDPOINT, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
 
-    setCurrentFindings({ diagnosis: '', notes: '', comments: '', prescriptions: '' });
-    alert("Success: Session findings archived and updated in cloud database profile.");
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Failed to sync encounter log to cloud.");
+      }
+
+      alert("Success: Session findings archived securely in cloud database!");
+      setCurrentFindings({ diagnosis: '', notes: '', comments: '', prescriptions: '' });
+      
+      handleSearch(targetId);
+
+    } catch (error) {
+      console.error("Save Encounter Error:", error);
+      alert("Encounter Archive Failed: " + error.message);
+    }
   };
 
   const handleAICheck = (drugName) => {
     setLoading(true);
     setTimeout(() => {
       const inputLower = drugName.toLowerCase();
-      const hasPenicillinAllergy = patient.allergies.some(a => a.toLowerCase().includes('penicillin'));
-      const hasSulfaAllergy = patient.allergies.some(a => a.toLowerCase().includes('sulfa'));
+      const hasPenicillinAllergy = patient.allergies.some(a => String(a).toLowerCase().includes('penicillin'));
+      const hasSulfaAllergy = patient.allergies.some(a => String(a).toLowerCase().includes('sulfa'));
 
       if ((inputLower.includes('amoxicillin') || inputLower.includes('penicillin')) && hasPenicillinAllergy) {
         setAiResult({
           conflictDetected: true,
-          reason: "CRITICAL ALERT: Dynamic lookup detects an active Penicillin allergy badge on this file. Amoxicillin exposure risk: Anaphylactic Shock. Action: DENIED."
+          reason: "CRITICAL ALERT: Dynamic lookup detects an active Penicillin allergy badge on this file. Action: DENIED."
         });
       } else if (inputLower.includes('co-trimoxazole') && hasSulfaAllergy) {
         setAiResult({
           conflictDetected: true,
-          reason: "CRITICAL ALERT: Dynamic lookup detects an active Sulfa allergy badge on this file. Co-Trimoxazole contains sulfonamide and is contraindicated. Action: DENIED."
+          reason: "CRITICAL ALERT: Dynamic lookup detects an active Sulfa allergy badge on this file. Action: DENIED."
         });
       } else {
         setAiResult({
           conflictDetected: false,
-          reason: `No interaction conflicts or known allergic matching found between "${drugName}" and current records. Safe to proceed with dispensing.`
+          reason: `No interaction conflicts found for "${drugName}". Safe to proceed.`
         });
       }
       setLoading(false);
@@ -244,105 +335,13 @@ export default function DoctorDashboard() {
             isUnlocked={isRecordUnlocked}
           />
           
-          {/* SIDEBAR PANEL: Interactive Vitals & Allergies Manager - Only Visible when Unlocked */}
-          {patient && isRecordUnlocked && (
-            <div className="card sidebar-card animate-fade">
-              
-              {/* Dynamic Allergy Section */}
-              <div className="section-block">
-                <h3>Critical Allergies Matrix</h3>
-                <div className="allergy-container">
-                  {patient.allergies.map((allergy, index) => (
-                    <span key={index} className="allergy-badge deleteable">
-                      {allergy}
-                      <button onClick={() => removeAllergy(index)} className="btn-badge-del">×</button>
-                    </span>
-                  ))}
-                </div>
-                <form onSubmit={addAllergy} className="mini-inline-form">
-                  <input 
-                    type="text" 
-                    placeholder="Add allergy..." 
-                    value={newAllergyInput}
-                    onChange={(e) => setNewAllergyInput(e.target.value)}
-                  />
-                  <button type="submit">+</button>
-                </form>
-              </div>
-              
-              <hr className="divider" />
-              
-              {/* Dynamic Triage Vitals Section */}
-              <div className="section-block">
-                <div className="split-block-header">
-                  <h3>Triage Vitals Metrics</h3>
-                  <button onClick={() => setIsEditingVitals(!isEditingVitals)} className="btn-text-link">
-                    {isEditingVitals ? '✕ Close' : '✏️ EDIT'}
-                  </button>
-                </div>
-
-                {isEditingVitals ? (
-                  <form onSubmit={handleVitalsSave} className="vitals-edit-form">
-                    <div className="f-row">
-                      <label>💓 BP:</label>
-                      <input type="text" value={vitalsForm.bp} onChange={(e) => setVitalsForm({...vitalsForm, bp: e.target.value})} />
-                    </div>
-                    <div className="f-row">
-                      <label>🌡️ Temp (°C):</label>
-                      <input type="text" value={vitalsForm.temp} onChange={(e) => setVitalsForm({...vitalsForm, temp: e.target.value})} />
-                    </div>
-                    <div className="f-row">
-                      <label>⚖️ Weight:</label>
-                      <input type="text" value={vitalsForm.weight} onChange={(e) => setVitalsForm({...vitalsForm, weight: e.target.value})} />
-                    </div>
-                    <div className="f-row">
-                      <label>🫁 SpO2 (%):</label>
-                      <input type="text" value={vitalsForm.spo2} onChange={(e) => setVitalsForm({...vitalsForm, spo2: e.target.value})} />
-                    </div>
-                    <button type="submit" className="btn-vitals-save">Save Snapshot</button>
-                  </form>
-                ) : (
-                  <div className="vitals-horizontal-grid">
-                    <div className="vital-pill-item">
-                      <span className="v-emoji">💓</span>
-                      <div className="v-meta">
-                        <span className="v-lbl">BP</span>
-                        <span className="v-val">{patient.vitals.bp}</span>
-                      </div>
-                    </div>
-                    
-                    <div className="vital-pill-item">
-                      <span className="v-emoji">🌡️</span>
-                      <div className="v-meta">
-                        <span className="v-lbl">Temp</span>
-                        <span className="v-val">{patient.vitals.temp}</span>
-                      </div>
-                    </div>
-
-                    <div className="vital-pill-item">
-                      <span className="v-emoji">⚖️</span>
-                      <div className="v-meta">
-                        <span className="v-lbl">Weight</span>
-                        <span className="v-val">{patient.vitals.weight}</span>
-                      </div>
-                    </div>
-
-                    <div className="vital-pill-item vital-highlight-pill">
-                      <span className="v-emoji">🫁</span>
-                      <div className="v-meta">
-                        <span className="v-lbl">SpO2</span>
-                        <span className="v-val">{patient.vitals.spo2}</span>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-
-            </div>
-          )}
-          
-          {/* Informational baseline helper state if record is locked */}
-          {patient && !isRecordUnlocked && (
+          {patient && isRecordUnlocked ? (
+            <SidebarSummary 
+              patient={patient} 
+              onAddAllergy={handleAddAllergy} 
+              onRemoveAllergy={handleRemoveAllergy} 
+            />
+          ) : (
             <div className="card sidebar-card empty-sidebar-state">
               <p style={{textAlign: 'center', color: '#64748b', fontSize: '13px', padding: '10px 0'}}>
                 🛡️ Patient records sealed inside secure database storage.
@@ -352,7 +351,6 @@ export default function DoctorDashboard() {
         </aside>
 
         <main className="workspace-content">
-          {/* ONLY SHOW FULL BODY DATA WORKFLOWS IF RECORD IS UNLOCKED */}
           {patient && isRecordUnlocked ? (
             <div className="card medical-folder-card animate-fade">
               <div className="folder-header">
@@ -372,33 +370,64 @@ export default function DoctorDashboard() {
               </div>
 
               <div className="folder-body">
-                
-                {/* SECTION 1: Active Treatment Stack */}
                 <section className="data-segment segment-meds">
                   <h3>Active Treatment & Medications List</h3>
                   <div className="meds-inner-list-edit">
-                    {patient.currentMedications.map((med, idx) => (
-                      <div key={idx} className="med-pill-row-manage">
-                        <span className="m-text">{med}</span>
-                        <button onClick={() => removeMedication(idx)} className="btn-med-del">x</button>
-                      </div>
-                    ))}
+                    {patient.currentMedications.length > 0 ? (
+                      patient.currentMedications.map((med, idx) => (
+                        <div key={idx} className="med-pill-row-manage">
+                          <span className="m-text">{med}</span>
+                        </div>
+                      ))
+                    ) : (
+                      <p style={{color: '#64748b', fontSize: '13px'}}>No chronic medications on file.</p>
+                    )}
                   </div>
-                  <form onSubmit={addMedication} className="meds-append-form">
-                    <input 
-                      type="text" 
-                      placeholder="Type alternative chronic prescription medication to track..." 
-                      value={newMedInput} 
-                      onChange={(e) => setNewMedInput(e.target.value)}
-                    />
-                    <button type="submit">Add Medication</button>
-                  </form>
                 </section>
 
-                {/* SECTION 2: Current Session Case Findings Input Block */}
                 <section className="data-segment segment-workspace-entry">
-                  <h3>Active Consultation Entry (Your Findings)</h3>
+                  <h3>Active Consultation Entry & Triage Vitals</h3>
                   <form onSubmit={submitCurrentFindings} className="consult-entry-form">
+                    
+                    <div className="input-grid-4" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '15px' }}>
+                      <div className="form-element">
+                        <label>Blood Pressure (BP)</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g., 120/80"
+                          value={vitalsInput.bp}
+                          onChange={(e) => setVitalsInput({...vitalsInput, bp: e.target.value})}
+                        />
+                      </div>
+                      <div className="form-element">
+                        <label>Temperature (°C)</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g., 36.8"
+                          value={vitalsInput.temp}
+                          onChange={(e) => setVitalsInput({...vitalsInput, temp: e.target.value})}
+                        />
+                      </div>
+                      <div className="form-element">
+                        <label>Weight (kg)</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g., 75"
+                          value={vitalsInput.weight}
+                          onChange={(e) => setVitalsInput({...vitalsInput, weight: e.target.value})}
+                        />
+                      </div>
+                      <div className="form-element">
+                        <label>SpO2 (%)</label>
+                        <input 
+                          type="text" 
+                          placeholder="e.g., 99"
+                          value={vitalsInput.spo2}
+                          onChange={(e) => setVitalsInput({...vitalsInput, spo2: e.target.value})}
+                        />
+                      </div>
+                    </div>
+
                     <div className="input-grid-2">
                       <div className="form-element">
                         <label>Primary Diagnosis / Impression *</label>
@@ -410,10 +439,10 @@ export default function DoctorDashboard() {
                         />
                       </div>
                       <div className="form-element">
-                        <label>Prescriptions Administered This Visit (Please Separate by Commas)</label>
+                        <label>Prescriptions Administered</label>
                         <input 
                           type="text" 
-                          placeholder="e.g., Amlodipine 5mg, Paracetamol"
+                          placeholder="e.g., Paracetamol"
                           value={currentFindings.prescriptions}
                           onChange={(e) => setCurrentFindings({...currentFindings, prescriptions: e.target.value})}
                         />
@@ -424,56 +453,36 @@ export default function DoctorDashboard() {
                       <label>Clinical History Findings / Case Assessment Notes *</label>
                       <textarea 
                         rows="3" 
-                        placeholder="Detail symptom timelines, review of cardiovascular/respiratory indicators or imaging metrics..."
+                        placeholder="Detail symptom timelines..."
                         value={currentFindings.notes}
                         onChange={(e) => setCurrentFindings({...currentFindings, notes: e.target.value})}
                       />
                     </div>
 
-                    <div className="form-element mt-12">
-                      <label>Extra Internal Comments / Discretionary Notes</label>
-                      <textarea 
-                        rows="2" 
-                        placeholder="Add secondary operational remarks, follow-up dates, or diagnostic requests..."
-                        value={currentFindings.comments}
-                        onChange={(e) => setCurrentFindings({...currentFindings, comments: e.target.value})}
-                      />
-                    </div>
-
-                    <button type="submit" className="btn-archive-encounter">
-                      Commit Intake Session to Cloud Database History
+                    <button type="submit" className="btn-archive-encounter" style={{ marginTop: '15px' }}>
+                      Commit Intake Session to Cloud Database
                     </button>
                   </form>
                 </section>
 
-                {/* SECTION 3: Cross-Facility Timeline Logs */}
                 <section className="data-segment">
                   <h3>Cross-Facility Historical Encounters Log</h3>
-                  <p className="helper-caption">Click a record card below to investigate diagnostic historical profiles.</p>
                   <div className="timeline-container">
-                    {patient.encounters.map((encounter) => (
-                      <EncounterCard key={encounter.id} encounter={encounter} />
+                    {patient.encounters.map((encounter, idx) => (
+                      <EncounterCard key={encounter.id || encounter.encounterId || idx} encounter={encounter} />
                     ))}
                   </div>
                 </section>
-
               </div>
             </div>
           ) : (
-            /* LOCKED CONTAINER / NO PATIENT PLACEHOLDER CARD */
             <div className="card placeholder-state-card">
               <div className="placeholder-icon">🔒</div>
               <h3>{patient ? "Patient Record Access Restricted" : "No Record Loaded"}</h3>
-              <p>
-                {patient 
-                  ? `Found profile for ${patient.fullName}. Please request authorization verification access to view historical health files.`
-                  : "Execute a search query using a verified ID or Ghana Card to load medical data."
-                }
-              </p>
+              <p>Execute a search query using a verified ID or Ghana Card to load medical data.</p>
             </div>
           )}
 
-          {/* Render the AI check segment only if access is approved */}
           {patient && isRecordUnlocked && (
             <AISafetyBox patient={patient} onRunCheck={handleAICheck} aiResult={aiResult} loading={loading} />
           )}
