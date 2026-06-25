@@ -20,59 +20,63 @@ export default function PatientDashboard() {
   };
 
   // EFFECT HOOK TO FETCH LIVE RECORD DIRECTLY FROM DYNAMODB
+  // EFFECT HOOK TO FETCH LIVE RECORD DIRECTLY FROM DYNAMODB
   useEffect(() => {
+    // 1. Define the helper function inside the scope where it is used
+    const extractValue = (obj) => {
+      if (!obj) return null;
+      if (typeof obj !== 'object') return obj;
+      return obj.S || obj.N || obj.BOOL || obj.L || obj.M || obj;
+    };
+
     async function loadCloudPatient() {
       try {
-        // Using a test ID key that matches your active DynamoDB storage partition pattern
         const TARGET_PATIENT_ID = "GH-ACC-2026-8902"; 
         const API_ENDPOINT = `https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/patients/${TARGET_PATIENT_ID}`;
         
-        const response = await fetch(API_ENDPOINT, {
-          method: "GET",
-          headers: { "Content-Type": "application/json" }
-        });
+        const response = await fetch(API_ENDPOINT);
+        if (!response.ok) throw new Error(`Status: ${response.status}`);
 
-        if (!response.ok) {
-          throw new Error(`Cloud lookup returned status code: ${response.status}`);
-        }
-
-        const data = await response.json();
-        const historicalEncounters = data.Encounters || [];
+        const rawResponse = await response.json();
         
-        // Grab the most recent encounter block to extract baseline vitals snapshots
+        // FIX: Parse the body string returned by API Gateway
+        const data = typeof rawResponse.body === 'string' 
+                     ? JSON.parse(rawResponse.body) 
+                     : rawResponse.body;
+
+        const historicalEncounters = data.encounters || [];
+        
         const latestEncounter = historicalEncounters.length > 0 
           ? historicalEncounters[historicalEncounters.length - 1] 
           : null;
 
-        const resolvedVitals = {
-          bp: latestEncounter?.vitals?.bp || "Not Recorded",
-          temp: latestEncounter?.vitals?.temp ? `${latestEncounter.vitals.temp}°C` : "36.5°C", 
-          weight: latestEncounter?.vitals?.weight || "Not Recorded",
-          spo2: latestEncounter?.vitals?.spo2 || "Not Recorded"
-        };
-        
-        // Format live payload attributes cleanly into state
         setPatientRecord({
-          fullName: data.fullName,
-          patientId: data.PatientID,
-          dob: data.dateOfBirth,
-          gender: data.gender,
-          bloodType: data.bloodType,
-          ghanaCard: data.PatientID,
+          fullName: `${data.firstName || 'Unknown'} ${data.lastName || ''}`,
+          patientId: data.id || TARGET_PATIENT_ID,
+          dob: data.dateOfBirth || "Not Recorded",
+          gender: data.gender || "Not Recorded",
+          bloodType: data.bloodType || "O+",
+          ghanaCard: data.ghanaCardId,
           currentAllergies: data.allergies || ["None Registered"],
           currentActiveMedications: data.currentActiveMedications || [],
-          vitals: resolvedVitals,
+          vitals: {
+            bp: latestEncounter?.vitals?.bp || "Not Recorded",
+            temp: latestEncounter?.vitals?.temp ? `${latestEncounter.vitals.temp}°C` : "36.5°C",
+            weight: latestEncounter?.vitals?.weight || "Not Recorded",
+            spo2: latestEncounter?.vitals?.spo2 || "Not Recorded"
+          },
           encounters: historicalEncounters
         });
 
       } catch (err) {
-        console.error("Cloud lookup error on Patient portal:", err);
+        console.error("Cloud lookup error:", err);
       } finally {
         setLoading(false);
       }
     }
+    
     loadCloudPatient();
-  }, []);
+  }, []); 
 
   const handleAcceptAccess = () => {
     const now = new Date();
