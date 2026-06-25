@@ -282,33 +282,41 @@ export default function DoctorDashboard() {
     }
   };
 
-  const handleAICheck = (drugName) => {
+  const handleAICheck = async (drugName) => {
     setLoading(true);
-    setTimeout(() => {
-      const inputLower = drugName.toLowerCase();
-      const hasPenicillinAllergy = patient.allergies.some(a => String(a).toLowerCase().includes('penicillin'));
-      const hasSulfaAllergy = patient.allergies.some(a => String(a).toLowerCase().includes('sulfa'));
-
-      if ((inputLower.includes('amoxicillin') || inputLower.includes('penicillin')) && hasPenicillinAllergy) {
-        setAiResult({
-          conflictDetected: true,
-          reason: "CRITICAL ALERT: Dynamic lookup detects an active Penicillin allergy badge on this file. Action: DENIED."
-        });
-      } else if (inputLower.includes('co-trimoxazole') && hasSulfaAllergy) {
-        setAiResult({
-          conflictDetected: true,
-          reason: "CRITICAL ALERT: Dynamic lookup detects an active Sulfa allergy badge on this file. Action: DENIED."
-        });
-      } else {
-        setAiResult({
-          conflictDetected: false,
-          reason: `No interaction conflicts found for "${drugName}". Safe to proceed.`
-        });
+    try {
+      // Corrected URL: added /check-safety to the end of your base URL
+      const response = await fetch("https://s7muqo4m58.execute-api.us-west-2.amazonaws.com/prod/check-safety", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ 
+          drugName: drugName, 
+          currentMeds: patient.currentActiveMedications || [] // Added fallback
+        })
+      });
+      
+      // Check if the server returned an error (like 403 or 500)
+      if (!response.ok) {
+        throw new Error(`Server responded with ${response.status}`);
       }
-      setLoading(false);
-    }, 1200);
-  };
 
+      const data = await response.json();
+      
+      // 2. Set the result based on Bedrock's response
+      setAiResult({
+        conflictDetected: data.severity === "HIGH" || data.severity === "MODERATE",
+        reason: data.explanation || "Safety check completed."
+      });
+    } catch (err) {
+      console.error("AI Scan failed:", err);
+      setAiResult({
+        conflictDetected: true,
+        reason: "System error: Could not reach AI Safety Scanner. Ensure CORS is enabled and API is deployed."
+      });
+    } finally {
+      setLoading(false);
+    }
+  };
   return (
     <div className="app-viewport">
       <header className="main-navbar">
